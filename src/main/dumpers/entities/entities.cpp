@@ -182,33 +182,52 @@ bool IsEntityClassInfo(const CModule& module, const CEntityClassInfo* info)
 	return IsInModule(module, dataMap) && IsModuleString(module, dataMap->dataClassName) && !strcmp(dataMap->dataClassName, info->m_pszCPPClassname);
 }
 
-// Entity classes are only linked into the entity system once a game starts, but
-// their class infos are statics that exist as soon as the module is loaded.
-std::vector<const CEntityClassInfo*> FindEntityClasses(CModule& module)
+bool IsDataMap(const CModule& module, const datamap_t* dataMap)
 {
-	std::vector<const CEntityClassInfo*> classes;
+	if (dataMap->dataNumFields <= 0 || !IsInModule(module, dataMap->dataDesc) || !IsInModule(module, dataMap->dataDesc + dataMap->dataNumFields - 1))
+		return false;
+
+	if (!IsModuleString(module, dataMap->dataClassName))
+		return false;
+
+	if (dataMap->baseMap && (!IsInModule(module, dataMap->baseMap) || !IsModuleString(module, dataMap->baseMap->dataClassName)))
+		return false;
+
+	for (int i = 0; i < dataMap->dataNumFields; i++)
+	{
+		const auto& field = dataMap->dataDesc[i];
+		if ((field.fieldName && !IsModuleString(module, field.fieldName)) || (field.externalName && !IsModuleString(module, field.externalName)))
+			return false;
+	}
+
+	return true;
+}
+
+// Entity classes are only linked into the entity system once a game starts, and
+// datamaps are built by static initializers, but both are statics that exist as
+// soon as the module is loaded.
+template <typename T>
+std::vector<const T*> FindStatics(CModule& module, bool (*isMatch)(const CModule&, const T*))
+{
+	std::vector<const T*> found;
 	auto dataSection = module.GetSection(".data");
 
 	if (!dataSection)
 	{
 		spdlog::error("Failed to find .data section in {}", module.m_pszModule);
-		return classes;
+		return found;
 	}
 
 	// Statics without an initializer live past the section's raw data, so scan to the end of the module.
-	auto end = (uint8_t*)module.m_base + module.m_size - sizeof(CEntityClassInfo);
-	for (auto ptr = (uint8_t*)dataSection->m_pBase; ptr <= end; ptr += alignof(CEntityClassInfo))
+	auto end = (uint8_t*)module.m_base + module.m_size - sizeof(T);
+	for (auto ptr = (uint8_t*)dataSection->m_pBase; ptr <= end; ptr += alignof(T))
 	{
-		auto info = reinterpret_cast<const CEntityClassInfo*>(ptr);
-		if (IsEntityClassInfo(module, info))
-			classes.push_back(info);
+		auto candidate = reinterpret_cast<const T*>(ptr);
+		if (isMatch(module, candidate))
+			found.push_back(candidate);
 	}
 
-	std::sort(classes.begin(), classes.end(), [](const CEntityClassInfo* a, const CEntityClassInfo* b) {
-		return strcmp(a->m_pszClassname, b->m_pszClassname) < 0;
-	});
-
-	return classes;
+	return found;
 }
 
 // Keyvalues also come from embedded datamaps, such as the scene node's parentAttachmentName.
@@ -309,10 +328,15 @@ void Dump()
 
 	spdlog::info("Dumping entity classes");
 
+	auto entityClasses = FindStatics<CEntityClassInfo>(*server, IsEntityClassInfo);
+	std::sort(entityClasses.begin(), entityClasses.end(), [](const CEntityClassInfo* a, const CEntityClassInfo* b) {
+		return strcmp(a->m_pszClassname, b->m_pszClassname) < 0;
+	});
+
 	std::map<std::string, const datamap_t*> dataMaps;
 	json classesArray = json::array();
 
-	for (auto info : FindEntityClasses(*server))
+	for (auto info : entityClasses)
 	{
 		json classObj;
 		classObj["name"] = info->m_pszClassname;
@@ -329,6 +353,18 @@ void Dump()
 
 		classesArray.push_back(std::move(classObj));
 	}
+
+	// Components' datamaps, such as the scene node's with parentAttachmentName, are
+	// not linked from any entity's. A name taken by an entity's datamap stays with it.
+	int sharedNames = 0;
+	for (auto dataMap : FindStatics<datamap_t>(*server, IsDataMap))
+	{
+		if (!dataMaps.emplace(dataMap->dataClassName, dataMap).second && dataMaps[dataMap->dataClassName] != dataMap)
+			sharedNames++;
+	}
+
+	if (sharedNames)
+		spdlog::info("Skipped {} datamaps sharing a name with an entity's datamap", sharedNames);
 
 	json dataMapsArray = json::array();
 	for (const auto& [name, dataMap] : dataMaps)
