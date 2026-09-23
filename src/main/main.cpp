@@ -26,6 +26,7 @@
 
 #include "dumpers/concommands/concommands.h"
 #include "dumpers/schemas/schemas.h"
+#include "dumpers/entities/entities.h"
 #include "dumpers/module_metadata/module_metadata.h"
 
 #include <fmt/format.h>
@@ -84,6 +85,7 @@ int main(int argc, char** argv)
 
 	Dumpers::ConCommands::Dump();
 	Dumpers::Schemas::Dump();
+	Dumpers::Entities::Dump();
 	Dumpers::ModuleMetadata::Dump();
 
 	std::ofstream file(Globals::outputPath / ".stringsignore");
