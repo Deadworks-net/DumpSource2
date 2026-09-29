@@ -33,6 +33,11 @@
 #include <spdlog/spdlog.h>
 #include <nlohmann/json.hpp>
 
+#ifndef _WIN32
+#include <sys/mman.h>
+#include <unistd.h>
+#endif
+
 using json = nlohmann::json;
 
 namespace Dumpers::Entities
@@ -52,6 +57,66 @@ std::vector<std::pair<int, const char*>> g_flagMap{
 	{FTYPEDESC_WAS_OUTPUT, "was_output"}
 };
 
+#ifdef GAME_DEADLOCK
+#define FIELD_TYPE_NAME(type)  \
+	case SpawnKeyType_t::type: \
+		return #type;
+
+// Since Deadlock 6711 datamaps number their fields' types apart from the schema system's fieldtype_t.
+const char* GetFieldTypeName(SpawnKeyType_t type)
+{
+	switch (type)
+	{
+		FIELD_TYPE_NAME(FIELD_VOID)
+		FIELD_TYPE_NAME(FIELD_FLOAT32)
+		FIELD_TYPE_NAME(FIELD_STRING)
+		FIELD_TYPE_NAME(FIELD_VECTOR)
+		FIELD_TYPE_NAME(FIELD_QUATERNION)
+		FIELD_TYPE_NAME(FIELD_INT32)
+		FIELD_TYPE_NAME(FIELD_BOOLEAN)
+		FIELD_TYPE_NAME(FIELD_INT16)
+		FIELD_TYPE_NAME(FIELD_CHARACTER)
+		FIELD_TYPE_NAME(FIELD_COLOR32)
+		FIELD_TYPE_NAME(FIELD_EMBEDDED)
+		FIELD_TYPE_NAME(FIELD_EHANDLE)
+		FIELD_TYPE_NAME(FIELD_POSITION_VECTOR)
+		FIELD_TYPE_NAME(FIELD_TIME)
+		FIELD_TYPE_NAME(FIELD_TICK)
+		FIELD_TYPE_NAME(FIELD_SOUNDNAME)
+		FIELD_TYPE_NAME(FIELD_VECTOR2D)
+		FIELD_TYPE_NAME(FIELD_INT64)
+		FIELD_TYPE_NAME(FIELD_VECTOR4D)
+		FIELD_TYPE_NAME(FIELD_UINT64)
+		FIELD_TYPE_NAME(FIELD_UINT32)
+		FIELD_TYPE_NAME(FIELD_UTLSTRINGTOKEN)
+		FIELD_TYPE_NAME(FIELD_QANGLE)
+		FIELD_TYPE_NAME(FIELD_NETWORK_ORIGIN_CELL_QUANTIZED_VECTOR)
+		FIELD_TYPE_NAME(FIELD_HMATERIAL)
+		FIELD_TYPE_NAME(FIELD_HMODEL)
+		FIELD_TYPE_NAME(FIELD_NETWORK_QUANTIZED_VECTOR)
+		FIELD_TYPE_NAME(FIELD_NETWORK_QUANTIZED_FLOAT)
+		FIELD_TYPE_NAME(FIELD_DIRECTION_VECTOR_WORLDSPACE)
+		FIELD_TYPE_NAME(FIELD_QANGLE_WORLDSPACE)
+		FIELD_TYPE_NAME(FIELD_QUATERNION_WORLDSPACE)
+		FIELD_TYPE_NAME(FIELD_UTLSTRING)
+		FIELD_TYPE_NAME(FIELD_HRENDERTEXTURE)
+		FIELD_TYPE_NAME(FIELD_HPARTICLESYSTEMDEFINITION)
+		FIELD_TYPE_NAME(FIELD_UINT8)
+		FIELD_TYPE_NAME(FIELD_UINT16)
+		FIELD_TYPE_NAME(FIELD_HPOSTPROCESSING)
+		FIELD_TYPE_NAME(FIELD_AMMO_INDEX)
+		FIELD_TYPE_NAME(FIELD_MODIFIER_HANDLE)
+		FIELD_TYPE_NAME(FIELD_HVDATA)
+		FIELD_TYPE_NAME(FIELD_GLOBALSYMBOL)
+		FIELD_TYPE_NAME(FIELD_NETWORK_QUANTIZED_VECTORWS)
+		FIELD_TYPE_NAME(FIELD_NETWORK_ORIGIN_CELL_QUANTIZED_VECTORWS)
+		default:
+			return "FIELD_UNKNOWN";
+	}
+}
+
+#undef FIELD_TYPE_NAME
+#else
 #define FIELD_TYPE_NAME(type) \
 	case type:                \
 		return #type;
@@ -129,13 +194,7 @@ const char* GetFieldTypeName(fieldtype_t type)
 		FIELD_TYPE_NAME(FIELD_ATTACHMENT_HANDLE)
 		FIELD_TYPE_NAME(FIELD_AMMO_INDEX)
 		FIELD_TYPE_NAME(FIELD_CONDITION_ID)
-#ifdef GAME_DEADLOCK
-		// Deadworks' sourcesdk names it as upstream does; keep the name entities.json has always had
-		case DEPRECATED_FIELD_AI_SCHEDULE_BITS:
-			return "FIELD_AI_SCHEDULE_BITS";
-#else
 		FIELD_TYPE_NAME(FIELD_AI_SCHEDULE_BITS)
-#endif
 		FIELD_TYPE_NAME(FIELD_MODIFIER_HANDLE)
 		FIELD_TYPE_NAME(FIELD_ROTATION_VECTOR)
 		FIELD_TYPE_NAME(FIELD_ROTATION_VECTOR_WORLDSPACE)
@@ -153,6 +212,16 @@ const char* GetFieldTypeName(fieldtype_t type)
 }
 
 #undef FIELD_TYPE_NAME
+#endif
+
+bool IsEmbeddedField(const typedescription_t& field)
+{
+#ifdef GAME_DEADLOCK
+	return field.fieldType == SpawnKeyType_t::FIELD_EMBEDDED && !(field.flags & FTYPEDESC_ENUM);
+#else
+	return field.fieldType == FIELD_EMBEDDED && !(field.flags & FTYPEDESC_ENUM);
+#endif
+}
 
 bool IsInModule(const CModule& module, const void* ptr)
 {
@@ -173,6 +242,23 @@ bool IsModuleString(const CModule& module, const char* str)
 	return false;
 }
 
+bool IsReadable(const void* ptr, size_t size)
+{
+	if (!ptr)
+		return false;
+
+#ifdef _WIN32
+	MEMORY_BASIC_INFORMATION info;
+	if (!VirtualQuery(ptr, &info, sizeof(info)) || info.State != MEM_COMMIT || (info.Protect & (PAGE_NOACCESS | PAGE_GUARD)))
+		return false;
+
+	return (const uint8_t*)ptr + size <= (const uint8_t*)info.BaseAddress + info.RegionSize;
+#else
+	auto page = (uintptr_t)ptr & ~(uintptr_t)(sysconf(_SC_PAGESIZE) - 1);
+	return msync((void*)page, (uintptr_t)ptr + size - page, MS_ASYNC) == 0;
+#endif
+}
+
 // Whatever else points at two strings, only a real class info has a C++ class
 // name matching its own schema binding or datamap.
 bool IsEntityClassInfo(const CModule& module, const CEntityClassInfo* info)
@@ -188,9 +274,10 @@ bool IsEntityClassInfo(const CModule& module, const CEntityClassInfo* info)
 	return IsInModule(module, dataMap) && IsModuleString(module, dataMap->dataClassName) && !strcmp(dataMap->dataClassName, info->m_pszCPPClassname);
 }
 
+// Since Deadlock 6711 the server builds datamaps' fields on the heap as it loads, so they are not in the module.
 bool IsDataMap(const CModule& module, const datamap_t* dataMap)
 {
-	if (dataMap->dataNumFields <= 0 || !IsInModule(module, dataMap->dataDesc) || !IsInModule(module, dataMap->dataDesc + dataMap->dataNumFields - 1))
+	if (dataMap->dataNumFields <= 0 || !IsReadable(dataMap->dataDesc, sizeof(typedescription_t) * dataMap->dataNumFields))
 		return false;
 
 	if (!IsModuleString(module, dataMap->dataClassName))
@@ -202,7 +289,11 @@ bool IsDataMap(const CModule& module, const datamap_t* dataMap)
 	for (int i = 0; i < dataMap->dataNumFields; i++)
 	{
 		const auto& field = dataMap->dataDesc[i];
-		if ((field.fieldName && !IsModuleString(module, field.fieldName)) || (field.externalName && !IsModuleString(module, field.externalName)))
+		if (field.fieldName && !IsModuleString(module, field.fieldName))
+			return false;
+
+		// Since Deadlock 6711 fields without an external name point at an empty string
+		if (field.externalName && !(IsInModule(module, field.externalName) && (!*field.externalName || IsModuleString(module, field.externalName))))
 			return false;
 	}
 
@@ -254,7 +345,7 @@ void CollectDataMaps(const CModule& module, const datamap_t* dataMap, std::map<s
 		for (int i = 0; i < dataMap->dataNumFields; i++)
 		{
 			const auto& field = dataMap->dataDesc[i];
-			if (field.fieldType == FIELD_EMBEDDED && !(field.flags & FTYPEDESC_ENUM))
+			if (IsEmbeddedField(field))
 				CollectDataMaps(module, field.td, dataMaps);
 		}
 	}
@@ -282,7 +373,7 @@ json SerializeField(const typedescription_t& field)
 	if (flags.size())
 		j["flags"] = std::move(flags);
 
-	if (field.externalName)
+	if (field.externalName && *field.externalName)
 		j["external_name"] = field.externalName;
 
 	if (field.flags & FTYPEDESC_ENUM)
@@ -290,7 +381,7 @@ json SerializeField(const typedescription_t& field)
 		if (field.enumName)
 			j["enum"] = field.enumName;
 	}
-	else if (field.fieldType == FIELD_EMBEDDED && field.td)
+	else if (IsEmbeddedField(field) && field.td)
 	{
 		j["embedded"] = field.td->dataClassName;
 	}
