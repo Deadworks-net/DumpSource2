@@ -362,7 +362,7 @@ void DumpConVars(json& convarsArray)
 	// there's always gonna be a lot of convars, let's save some reallocations
 	convars.reserve(1000);
 
-	for (ConVarRefAbstract ref(ConVarRef((uint16)0)); ref.IsValidRef(); ref = ConVarRefAbstract(ConVarRef(ref.GetAccessIndex() + 1)))
+	for (ConVarRefAbstract ref(ConVarRef((uint16)0)); ref.IsValidRef(); ref = ConVarRefAbstract(ConVarRef((uint16)(ref.GetAccessIndex() + 1))))
 	{
 		convars.push_back(ref);
 	}
