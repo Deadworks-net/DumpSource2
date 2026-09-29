@@ -8,11 +8,6 @@
 	url = https://github.com/Poggicek/hl2sdk
 	branch = dota
 	shallow = true
-[submodule "vendor/hl2sdk-deadlock"]
-	path = vendor/hl2sdk-deadlock
-	url = https://github.com/alliedmodders/hl2sdk
-	branch = deadlock
-	shallow = true
 [submodule "vendor/spdlog"]
 	path = vendor/spdlog
 	url = https://github.com/gabime/spdlog
@@ -27,4 +22,6 @@
 	shallow = true
 [submodule "vendor/sourcesdk"]
 	path = vendor/sourcesdk
-	url = https://github.com/Deadworks-net/sourcesdk.git
+	url = https://github.com/Deadworks-net/sourcesdk
+	branch = main
+	shallow = true

@@ -89,6 +89,12 @@ void Plat_ExitProcess(int) {
 	// STUB
 }
 
+#ifdef GAME_DEADLOCK
+void Plat_FatalError(const tchar*, ...) {
+	// STUB
+}
+#endif
+
 bool Plat_IsInDebugSession() {
 	// STUB
 	return false;
@@ -195,6 +201,13 @@ void V_StringToVector4D(const char*, Vector4D&, bool*, char**, uint, IParsingErr
 {
 	// STUB
 }
+
+#ifdef GAME_DEADLOCK
+void V_StringToVectorWS(const char*, VectorWS&, bool*, char**, uint, IParsingErrorListener*)
+{
+	// STUB
+}
+#endif
 
 int V_tier0_strlen(const char*) {
 	// STUB

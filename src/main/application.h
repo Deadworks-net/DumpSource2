@@ -18,7 +18,11 @@
  */
 
 #pragma once
+#ifdef GAME_DEADLOCK
+#include "appframework/iappsystem.h"
+#else
 #include "appframework/IAppSystem.h"
+#endif
 
 class DumperApplication : public CTier0AppSystem<IAppSystem>
 {
@@ -27,7 +31,12 @@ class DumperApplication : public CTier0AppSystem<IAppSystem>
 	virtual void Destructor2() {};
 #endif
 	virtual void PreShutdown() {};
+#ifdef GAME_DEADLOCK
+	// Deadworks' sourcesdk has the whole enum; 2 is the kBuildTypeRelease of the others
+	virtual AppSystemBuildType_t GetBuildType() { return APP_SYSTEM_BUILD_RETAIL; };
+#else
 	virtual BuildType_t	GetBuildType() { return kBuildTypeRelease; };
+#endif
 	virtual void Reconnect(CreateInterfaceFn factory, const char* interfaceName) {};
 
 

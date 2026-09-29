@@ -40,10 +40,40 @@ function(BUILD_HL2SDK GAME GAME_PATH)
 		message(STATUS "Setting up HL2SDK-${GAME}") # What does this print?
 endfunction()
 
+# Deadworks' sourcesdk (the SDK Deadworks itself builds against) ships no tier1, interfaces or
+# mathlib libraries, so the tier1 code the dumper uses is compiled from its sources. tier0 is
+# not linked: utils/common.cpp resolves it at runtime, as with the other SDKs.
+function(BUILD_SOURCESDK GAME GAME_PATH GAME_DEFINE)
+		SET(SOURCESDK_INCLUDES
+			${PROJECT_SOURCE_DIR}/vendor/${GAME_PATH}
+			${PROJECT_SOURCE_DIR}/vendor/${GAME_PATH}/common
+			${PROJECT_SOURCE_DIR}/vendor/${GAME_PATH}/game/shared
+			${PROJECT_SOURCE_DIR}/vendor/${GAME_PATH}/game/server
+			${PROJECT_SOURCE_DIR}/vendor/${GAME_PATH}/public
+			${PROJECT_SOURCE_DIR}/vendor/${GAME_PATH}/public/engine
+			${PROJECT_SOURCE_DIR}/vendor/${GAME_PATH}/public/mathlib
+			${PROJECT_SOURCE_DIR}/vendor/${GAME_PATH}/public/tier0
+			${PROJECT_SOURCE_DIR}/vendor/${GAME_PATH}/public/tier1
+			${PROJECT_SOURCE_DIR}/vendor/${GAME_PATH}/public/entity2
+			${PROJECT_SOURCE_DIR}/vendor/${GAME_PATH}/public/game/server
+		)
+
+		add_library(HL2SDK-${GAME} STATIC
+			${GAME_PATH}/interfaces/interfaces.cpp
+			${GAME_PATH}/tier1/convar.cpp
+			${GAME_PATH}/tier1/generichash.cpp
+			${GAME_PATH}/tier1/keyvalues3.cpp
+		)
+
+		target_include_directories(HL2SDK-${GAME} PUBLIC ${SOURCESDK_INCLUDES})
+		target_compile_definitions(HL2SDK-${GAME} PUBLIC ${GAME_DEFINE})
+		message(STATUS "Setting up HL2SDK-${GAME} from ${GAME_PATH}")
+endfunction()
+
 # DO NOT MODIFY, if you wish to switch the sdk for a game do it in src/main/CMakeLists.tst
 build_hl2sdk(CS2 hl2sdk-cs2)
 build_hl2sdk(DOTA hl2sdk-dota)
-build_hl2sdk(DEADLOCK hl2sdk-deadlock)
+build_sourcesdk(DEADLOCK sourcesdk DEADLOCK)
 
 # EXTERNAL LIBRARIES
 # ---
