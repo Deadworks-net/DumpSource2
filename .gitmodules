@@ -25,3 +25,6 @@
 	path = vendor/json
 	url = https://github.com/nlohmann/json
 	shallow = true
+[submodule "vendor/sourcesdk"]
+	path = vendor/sourcesdk
+	url = https://github.com/Deadworks-net/sourcesdk.git
