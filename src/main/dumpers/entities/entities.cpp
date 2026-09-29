@@ -231,9 +231,9 @@ std::vector<const T*> FindStatics(CModule& module, bool (*isMatch)(const CModule
 }
 
 // Keyvalues also come from embedded datamaps, such as the scene node's parentAttachmentName.
-void CollectDataMaps(const datamap_t* dataMap, std::map<std::string, const datamap_t*>& dataMaps)
+void CollectDataMaps(const CModule& module, const datamap_t* dataMap, std::map<std::string, const datamap_t*>& dataMaps)
 {
-	for (; dataMap; dataMap = dataMap->baseMap)
+	for (; dataMap && IsInModule(module, dataMap) && IsDataMap(module, dataMap); dataMap = dataMap->baseMap)
 	{
 		auto [it, inserted] = dataMaps.emplace(dataMap->dataClassName, dataMap);
 
@@ -249,7 +249,7 @@ void CollectDataMaps(const datamap_t* dataMap, std::map<std::string, const datam
 		{
 			const auto& field = dataMap->dataDesc[i];
 			if (field.fieldType == FIELD_EMBEDDED && !(field.flags & FTYPEDESC_ENUM))
-				CollectDataMaps(field.td, dataMaps);
+				CollectDataMaps(module, field.td, dataMaps);
 		}
 	}
 }
@@ -345,10 +345,10 @@ void Dump()
 		if (IsModuleString(*server, info->m_pszDescription))
 			classObj["description"] = info->m_pszDescription;
 
-		if (info->m_pDataDescMap)
+		if (info->m_pDataDescMap && IsInModule(*server, info->m_pDataDescMap) && IsDataMap(*server, info->m_pDataDescMap))
 		{
 			classObj["datamap"] = info->m_pDataDescMap->dataClassName;
-			CollectDataMaps(info->m_pDataDescMap, dataMaps);
+			CollectDataMaps(*server, info->m_pDataDescMap, dataMaps);
 		}
 
 		classesArray.push_back(std::move(classObj));
@@ -365,6 +365,13 @@ void Dump()
 
 	if (sharedNames)
 		spdlog::info("Skipped {} datamaps sharing a name with an entity's datamap", sharedNames);
+
+	// Without datamaps a reader would take every datamap as removed, so write neither.
+	if (dataMaps.empty())
+	{
+		spdlog::warn("Not writing entities.json: none of the {} entity classes has a datamap in the layout the SDK describes", classesArray.size());
+		return;
+	}
 
 	json dataMapsArray = json::array();
 	for (const auto& [name, dataMap] : dataMaps)
