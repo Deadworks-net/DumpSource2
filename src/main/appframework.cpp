@@ -98,6 +98,7 @@ void* AppSystemFactory(const char* pName, int* pReturnCode)
 		return g_factoryMap.at(pName);
 	}
 
+	spdlog::trace("No {} interface to connect", pName);
 	return nullptr;
 }
 
@@ -159,6 +160,17 @@ void InitializeAppSystems()
 		if (!std::filesystem::exists(targetPath))
 		{
 			spdlog::info("Skipping module as it does not exist: {}", targetPath);
+			continue;
+		}
+
+		// A module left over from an older build imports what tier0 no longer exports
+		if (!dlmount(targetPath.c_str()))
+		{
+#ifdef _WIN32
+			spdlog::warn("Skipping module that fails to load (error {}): {}", GetLastError(), targetPath);
+#else
+			spdlog::warn("Skipping module that fails to load ({}): {}", dlerror(), targetPath);
+#endif
 			continue;
 		}
 
