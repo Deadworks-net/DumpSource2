@@ -171,7 +171,7 @@ void Dump()
 	std::vector<IntermediateSchemaEnum> enums;
 	std::vector<IntermediateSchemaClass> classes;
 
-	for (auto i = 0; i < typeScopes.m_Vector.Count(); ++i)
+	for (auto i = 0; i < typeScopes.GetNumStrings(); ++i)
 		DumpTypeScope(typeScopes[i], enums, classes);
 
 	DumpTypeScope(schemaSystem->GlobalTypeScope(), enums, classes);
